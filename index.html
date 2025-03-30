@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+  <meta charset="UTF-8">
+  <title>Vöötkoodiskanner</title>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    #reader { width: 300px; margin: auto; }
+    .log { margin-top: 20px; font-weight: bold; }
+    .green { color: green; }
+    .red { color: red; }
+  </style>
+</head>
+<body>
+  <h2>📷 Skaneeri tööriista vöötkood</h2>
+  
+  <label for="username">Kasutajanimi:</label>
+  <input id="username" placeholder="nt. Madis"><br><br>
+
+  <label for="minutes">Tööaeg (min):</label>
+  <input id="minutes" type="number" value="10"><br><br>
+
+  <div id="reader"></div>
+  <div class="log" id="log"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCkOSCVZGIV5e2ZwTYP0r3HkAW7nW5M1Vo",
+      authDomain: "tool-tracker-996c2.firebaseapp.com",
+      projectId: "tool-tracker-996c2",
+      storageBucket: "tool-tracker-996c2.appspot.com",
+      messagingSenderId: "609152362782",
+      appId: "1:609152362782:web:0bbac46b0dc3a3f0340870"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const log = (msg, color = "") => {
+      const el = document.getElementById("log");
+      el.textContent = msg;
+      el.className = `log ${color}`;
+    };
+
+    function onScanSuccess(decodedText, decodedResult) {
+      const toolId = decodedText.trim();
+      const user = document.getElementById("username").value.trim() || "Tundmatu";
+      const minutes = parseInt(document.getElementById("minutes").value) || 10;
+
+      log(`⏳ Uuendan tööriista ${toolId}...`, ""); 
+
+      const toolRef = db.collection("tools").doc(toolId);
+
+      db.runTransaction(async (tx) => {
+        const doc = await tx.get(toolRef);
+        if (!doc.exists) throw new Error("Tööriista ei leitud");
+
+        const data = doc.data();
+        const newMinutes = (data.total_usage_minutes || 0) + minutes;
+
+        tx.update(toolRef, {
+          total_usage_minutes: newMinutes,
+          last_user: user,
+          last_used: new Date().toISOString().slice(0, 16).replace("T", " "),
+          status: newMinutes >= 120 ? "Hooldus" : "OK"
+        });
+      }).then(() => {
+        log(`✅ Uuendatud ${toolId}`, "green");
+      }).catch((err) => {
+        console.error(err); // ← Logi viga konsooli
+        log(`❌ Viga: ${err.message}`, "red");
+      });
+    }
+
+    new Html5Qrcode("reader").start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    );
+  </script>
+</body>
+</html>
