@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+  <meta charset="UTF-8">
+  <title>Lõikeriista skaneerimine</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body { font-family: Arial; text-align: center; padding: 20px; }
+    #reader { width: 300px; margin: auto; }
+    #result { font-size: 18px; margin-top: 20px; }
+    input, button, select { margin: 5px; padding: 8px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Skaneeri tööriista vöötkood</h2>
+
+  <input type="text" id="username" placeholder="Sisesta kasutajanimi" />
+  <input type="number" id="usageMinutes" placeholder="Minutid" min="1" value="10" />
+  <div id="reader"></div>
+  <div id="result"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDwv...",  // ← asenda oma andmetega
+      authDomain: "...",
+      projectId: "...",
+      storageBucket: "...",
+      messagingSenderId: "...",
+      appId: "..."
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    function logScan(toolId, username, minutes) {
+      const toolRef = db.collection("tools").doc(toolId);
+      const now = new Date();
+
+      toolRef.get().then((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          const updatedUsage = (data.total_usage_minutes || 0) + minutes;
+
+          toolRef.update({
+            last_user: username,
+            last_used: now.toISOString().slice(0, 16).replace("T", " "),
+            total_usage_minutes: updatedUsage,
+            status: updatedUsage >= 120 ? "Hooldus" : "OK"
+          }).then(() => {
+            document.getElementById("result").innerText = `✅ Tööriist ${toolId} uuendatud (${minutes} min)`;
+          });
+        } else {
+          document.getElementById("result").innerText = `❌ Tööriista ${toolId} ei leitud.`;
+        }
+      });
+    }
+
+    function onScanSuccess(decodedText) {
+      const username = document.getElementById("username").value;
+      const minutes = parseInt(document.getElementById("usageMinutes").value);
+      if (!username || isNaN(minutes) || minutes <= 0) {
+        alert("Sisesta kasutajanimi ja korrektne minutite arv!");
+        return;
+      }
+      logScan(decodedText, username, minutes);
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(cameras => {
+      if (cameras && cameras.length) {
+        html5QrCode.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: 250 },
+          onScanSuccess
+        );
+      }
+    });
+  </script>
+</body>
+</html>
