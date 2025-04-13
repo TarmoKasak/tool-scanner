@@ -20,17 +20,13 @@
       margin-top: 20px;
       font-weight: bold;
     }
-    .green {
-      color: green;
-    }
-    .red {
-      color: red;
-    }
+    .green { color: green; }
+    .red { color: red; }
   </style>
 </head>
 <body>
   <h2>📷 Skaneeri tööriista vöötkood</h2>
-  
+
   <label for="username">Kasutajanimi:</label>
   <input id="username" placeholder="nt. Madis"><br><br>
 
@@ -58,19 +54,21 @@
       el.className = `log ${color}`;
     };
 
-    let html5QrCode;
-    let scanning = false;
+    let html5QrCode = null;
+    let isScanning = false;
+    let lastScanned = "";
 
     function startScanner() {
       html5QrCode = new Html5Qrcode("reader");
-      Html5Qrcode.getCameras().then((devices) => {
+      Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
           html5QrCode.start(
             { facingMode: "environment" },
             { fps: 10, qrbox: 250 },
             onScanSuccess
-          );
-          scanning = true;
+          ).then(() => {
+            isScanning = true;
+          });
         }
       }).catch(err => {
         console.error("Kaamerat ei leitud:", err);
@@ -79,12 +77,10 @@
     }
 
     async function onScanSuccess(decodedText) {
-      if (!scanning) return;
-      scanning = false;
+      if (!isScanning || decodedText === lastScanned) return;
 
-      // Peatame kohe skaneerimise
-      await html5QrCode.stop();
-      await html5QrCode.clear();
+      isScanning = false;
+      lastScanned = decodedText;
 
       const toolId = decodedText.trim();
       const user = document.getElementById("username").value.trim() || "Tundmatu";
@@ -92,9 +88,11 @@
 
       log(`⏳ Uuendan tööriista ${toolId}...`);
 
-      const toolRef = db.collection("tools").doc(toolId);
-
       try {
+        await html5QrCode.stop();
+        await html5QrCode.clear();
+
+        const toolRef = db.collection("tools").doc(toolId);
         await db.runTransaction(async (tx) => {
           const doc = await tx.get(toolRef);
           if (!doc.exists) throw new Error("Tööriista ei leitud");
@@ -110,19 +108,21 @@
           });
         });
 
-        log(`✅ Tööriist ${toolId} uuendatud!`, "green");
-        alert(`✅ ${toolId} edukalt skaneeritud ja uuendatud`);
-
-        setTimeout(() => {
-          log("📷 Valmis uueks skannimiseks");
-          startScanner();
-        }, 3000);
+        log(`✅ ${toolId} edukalt uuendatud!`, "green");
+        alert(`✅ ${toolId} uuendatud ${minutes} minutiga!`);
 
       } catch (err) {
         console.error(err);
         log(`❌ Viga: ${err.message}`, "red");
-        startScanner();
       }
+
+      // ⏳ Uus skannimine 3 sek pärast
+      setTimeout(() => {
+        startScanner();
+        isScanning = true;
+        lastScanned = "";
+        log("📷 Valmis uueks skannimiseks");
+      }, 3000);
     }
 
     startScanner();
