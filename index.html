@@ -7,11 +7,25 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    #reader { width: 300px; margin: auto; }
-    .log { margin-top: 20px; font-weight: bold; }
-    .green { color: green; }
-    .red { color: red; }
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    #reader {
+      width: 300px;
+      margin: auto;
+    }
+    .log {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    .green {
+      color: green;
+    }
+    .red {
+      color: red;
+    }
   </style>
 </head>
 <body>
@@ -24,7 +38,7 @@
   <input id="minutes" type="number" value="10"><br><br>
 
   <div id="reader"></div>
-  <div class="log" id="log"></div>
+  <div class="log" id="log">⏳ Valmis skaneerima...</div>
 
   <script>
     const firebaseConfig = {
@@ -44,41 +58,74 @@
       el.className = `log ${color}`;
     };
 
-    function onScanSuccess(decodedText, decodedResult) {
+    let html5QrCode;
+    let scanning = false;
+
+    function startScanner() {
+      html5QrCode = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then((devices) => {
+        if (devices && devices.length) {
+          html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: 250 },
+            onScanSuccess
+          );
+          scanning = true;
+        }
+      }).catch(err => {
+        console.error("Kaamerat ei leitud:", err);
+        log("❌ Kaamerat ei leitud", "red");
+      });
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (!scanning) return;
+      scanning = false;
+
+      // Peatame kohe skaneerimise
+      await html5QrCode.stop();
+      await html5QrCode.clear();
+
       const toolId = decodedText.trim();
       const user = document.getElementById("username").value.trim() || "Tundmatu";
       const minutes = parseInt(document.getElementById("minutes").value) || 10;
 
-      log(`⏳ Uuendan tööriista ${toolId}...`, ""); 
+      log(`⏳ Uuendan tööriista ${toolId}...`);
 
       const toolRef = db.collection("tools").doc(toolId);
 
-      db.runTransaction(async (tx) => {
-        const doc = await tx.get(toolRef);
-        if (!doc.exists) throw new Error("Tööriista ei leitud");
+      try {
+        await db.runTransaction(async (tx) => {
+          const doc = await tx.get(toolRef);
+          if (!doc.exists) throw new Error("Tööriista ei leitud");
 
-        const data = doc.data();
-        const newMinutes = (data.total_usage_minutes || 0) + minutes;
+          const data = doc.data();
+          const newMinutes = (data.total_usage_minutes || 0) + minutes;
 
-        tx.update(toolRef, {
-          total_usage_minutes: newMinutes,
-          last_user: user,
-          last_used: new Date().toISOString().slice(0, 16).replace("T", " "),
-          status: newMinutes >= 120 ? "Hooldus" : "OK"
+          tx.update(toolRef, {
+            total_usage_minutes: newMinutes,
+            last_user: user,
+            last_used: new Date().toISOString().slice(0, 16).replace("T", " "),
+            status: newMinutes >= 120 ? "Hooldus" : "OK"
+          });
         });
-      }).then(() => {
-        log(`✅ Uuendatud ${toolId}`, "green");
-      }).catch((err) => {
-        console.error(err); // ← Logi viga konsooli
+
+        log(`✅ Tööriist ${toolId} uuendatud!`, "green");
+        alert(`✅ ${toolId} edukalt skaneeritud ja uuendatud`);
+
+        setTimeout(() => {
+          log("📷 Valmis uueks skannimiseks");
+          startScanner();
+        }, 3000);
+
+      } catch (err) {
+        console.error(err);
         log(`❌ Viga: ${err.message}`, "red");
-      });
+        startScanner();
+      }
     }
 
-    new Html5Qrcode("reader").start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      onScanSuccess
-    );
+    startScanner();
   </script>
 </body>
 </html>
